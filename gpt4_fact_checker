@@ -1,0 +1,70 @@
+import requests
+import openai
+import spacy
+
+# Replace this with your Google Fact Check API key
+GOOGLE_FACT_CHECK_API_KEY = "your_google_fact_check_api_key"
+
+# Replace this with your OpenAI API key
+openai.api_key = "your_openai_api_key"
+
+# Load the spaCy English language model
+nlp = spacy.load("en_core_web_sm")
+
+def get_fact_check_results(query):
+    url = f"https://factchecktools.googleapis.com/v1alpha1/claims:search?query={query}&key={GOOGLE_FACT_CHECK_API_KEY}"
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return None
+
+def process_gpt4_response(response, fact_check_results):
+    combined_output = response.choices[0].text.strip()
+
+    if fact_check_results:
+        combined_output += "\n\nFact Check Results:\n"
+        for result in fact_check_results:
+            claim_text = result.get("text", "N/A")
+            claim_author = result.get("claimant", "N/A")
+            claim_review_url = result.get("claimReview")[0]["url"]
+            combined_output += f"Claim: {claim_text}\nAuthor: {claim_author}\nReview URL: {claim_review_url}\n\n"
+
+    return combined_output
+
+def extract_statements(response):
+    text = response.choices[0].text.strip()
+    doc = nlp(text)
+    statements = [sent.text for sent in doc.sents]
+    return statements
+
+def gpt4_fact_checker(prompt):
+    # Generate a response using GPT-4
+    response = openai.Completion.create(
+        engine="text-davinci-002",
+        prompt=prompt,
+        max_tokens=150,
+        n=1,
+        stop=None,
+        temperature=0.7,
+    )
+
+    # Extract statements to fact-check from the GPT-4 response
+    statements = extract_statements(response)
+
+    # Fact-check statements using Google Fact Check API
+    fact_check_results = []
+    for statement in statements:
+        results = get_fact_check_results(statement)
+        if results:
+            fact_check_results.extend(results["claims"])
+    
+    # Process GPT-4 response and fact_check_results
+    final_output = process_gpt4_response(response, fact_check_results)
+    return final_output
+
+if __name__ == "__main__":
+    prompt = "Enter your text or prompt here"
+    output = gpt4_fact_checker(prompt)
+    print(output)
